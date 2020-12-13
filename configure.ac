@@ -1,9 +1,9 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT([mdbtools],[0.9.0-beta2],[https://github.com/mdbtools/mdbtools/issues],[],[https://github.com/mdbtools/mdbtools])
+AC_INIT([mdbtools],[0.9.0-beta8],[https://github.com/mdbtools/mdbtools/issues],[],[https://github.com/mdbtools/mdbtools])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_SRCDIR(src/extras/mdb-dump.c)
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([foreign])
 
 MDBTOOLS_VERSION_MAJOR=0
 MDBTOOLS_VERSION_MINOR=9
@@ -36,8 +36,7 @@ AC_CHECK_DECLS([program_invocation_short_name], [], [], [[
 
 dnl Checks for library functions.
 VL_LIB_READLINE
-AC_CHECK_FUNC(strptime,[ AC_DEFINE(HAVE_STRPTIME, 1, [strptime check]) AM_CONDITIONAL(HAVE_STRPTIME, true) ],[ AM_CONDITIONAL(HAVE_STRPTIME, false) ])
-AC_CHECK_FUNC(fmemopen,[ AC_DEFINE(HAVE_FMEMOPEN, 1, [fmemopen check]) ])
+AC_CHECK_FUNCS(strptime fmemopen)
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
@@ -45,6 +44,9 @@ AC_TYPE_SIZE_T
 
 AM_ICONV
 AM_GCC_ATTRIBUTE_ALIAS
+
+dnl Enable large files on 32-bit systems
+AC_SYS_LARGEFILE
 
 dnl no optional stuff by default
 OPTDIRS=""
@@ -210,9 +212,11 @@ AC_ARG_ENABLE(glib,
         [enable_glib=$enableval], [enable_glib=yes])
 
 if test "$enable_glib" = "yes"; then
-    PKG_CHECK_MODULES([GLIB], [glib-2.0], HAVE_GLIB=true, HAVE_GLIB=false)
+    GLIB_PACKAGE=glib-2.0
+    PKG_CHECK_MODULES([GLIB], [$GLIB_PACKAGE], HAVE_GLIB=true, HAVE_GLIB=false)
     if test "x$HAVE_GLIB" = "xtrue"; then
         GLIB_CFLAGS="$GLIB_CFLAGS -DHAVE_GLIB=1"
+        AC_SUBST(GLIB_PACKAGE)
     else
         enable_glib=no
     fi
@@ -221,37 +225,6 @@ AM_CONDITIONAL(FAKE_GLIB, test "x$enable_glib" != "xyes")
 
 AC_SUBST([OPTDIRS])
 AC_CONFIG_FILES([src/Makefile])
-
-
-##################################################
-# Check for gtk-doc.
-##################################################
-
-AC_ARG_WITH(html-dir,
-  AS_HELP_STRING([--with-html-dir=PATH], [path to installed docs]))
-
-if test "x$with_html_dir" = "x" ; then
-  HTML_DIR='${datadir}/gtk-doc/html'
-else
-  HTML_DIR=$with_html_dir
-fi
-
-AC_SUBST(HTML_DIR)
-
-PKG_CHECK_EXISTS([gtk-doc >= 1.0], GTKDOC=true, GTKDOC=false)
-
-dnl Let people disable the gtk-doc stuff.
-AC_ARG_ENABLE(gtk-doc, AS_HELP_STRING([--enable-gtk-doc], [use gtk-doc to build documentation [default=auto]]), enable_gtk_doc="$enableval", enable_gtk_doc=auto)
-
-if test x$enable_gtk_doc = xauto ; then
-  if test x$GTKDOC = xtrue ; then
-    enable_gtk_doc=yes
-  else
-    enable_gtk_doc=no 
-  fi
-fi
-
-AM_CONDITIONAL(ENABLE_GTK_DOC, test x$enable_gtk_doc = xyes)
 
 ##################################################
 # Check for txt2man
@@ -288,14 +261,6 @@ fi
 AC_SUBST([BASH_COMPLETION_DIR])
 AM_CONDITIONAL([ENABLE_BASH_COMPLETION],[test "x$with_bash_completion_dir" != "xno"])
 
-##################################################
-# Check for docbook
-##################################################
-AM_CONDITIONAL(ENABLE_DOCBOOK, test -n "$DOCBOOK_DSL")
-
-localedir=${datadir}/locale
-AC_SUBST(localedir)
-
 AC_CONFIG_FILES([
 libmdb.pc
 libmdbsql.pc
@@ -309,20 +274,18 @@ src/sql/Makefile
 src/odbc/Makefile
 src/fuzz/Makefile
 doc/Makefile
-mdbtools.spec
 include/mdbver.h])
 AC_OUTPUT
-dnl doc/reference/libmdb/Makefile])
 
 ##################################################
 # Print summary
 ##################################################
 
 
-bold_red=$(tput bold)$(tput setf 4)
-bold_green=$(tput bold)$(tput setf 2)
-bold=$(tput bold)
-reset=$(tput sgr0)
+bold_red=$(tput bold 2>/dev/null)$(tput setf 4 2>/dev/null)
+bold_green=$(tput bold 2>/dev/null)$(tput setf 2 2>/dev/null)
+bold=$(tput bold 2>/dev/null)
+reset=$(tput sgr0 2>/dev/null)
 AC_MSG_NOTICE([])
 AC_MSG_NOTICE([${bold}MDB Tools $VERSION - Configuration summary${reset}])
 AC_MSG_NOTICE([])
@@ -332,12 +295,8 @@ if test x$HAVE_ODBC = xtrue; then summary=${bold_green}enabled; else summary=${b
 AC_MSG_NOTICE([   ODBC            : ${summary}${reset}])
 if test x$enable_glib = xyes; then summary=${bold_green}enabled; else summary=${bold_red}disabled; fi
 AC_MSG_NOTICE([   GLib            : ${summary}${reset}])
-if test x$enable_gtk_doc = xyes; then summary=${bold_green}enabled; else summary=${bold_red}disabled; fi
-AC_MSG_NOTICE([   Gtk doc         : ${summary}${reset}])
 if test x$enable_man = xyes; then summary=${bold_green}enabled; else summary=${bold_red}disabled; fi
-AC_MSG_NOTICE([   man             : ${summary}${reset}])
-if test -n "$DOCBOOK_DSL"; then summary=${bold_green}enabled; else summary=${bold_red}disabled; fi
-AC_MSG_NOTICE([   html docbook    : ${summary}${reset}])
+AC_MSG_NOTICE([   man pages       : ${summary}${reset}])
 if test "x$with_bash_completion_dir" != "xno"; then summary=${bold_green}enabled; else summary=${bold_red}disabled; fi
 AC_MSG_NOTICE([   bash-completion : ${summary}${reset}])
 AC_MSG_NOTICE([])

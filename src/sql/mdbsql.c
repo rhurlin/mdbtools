@@ -68,6 +68,7 @@ MdbSQL *sql;
 	sql = (MdbSQL *) g_malloc0(sizeof(MdbSQL));
 	sql->columns = g_ptr_array_new();
 	sql->tables = g_ptr_array_new();
+	sql->bound_values = g_ptr_array_new();
 	sql->sarg_tree = NULL;
 	sql->sarg_stack = NULL;
 	sql->max_rows = -1;
@@ -111,7 +112,10 @@ mdb_sql_run_query (MdbSQL* sql, const gchar* querystr) {
 		return NULL;
 	}
 
-	mdb_sql_bind_all (sql);
+	if (mdb_sql_bind_all(sql) == -1) {
+		mdb_sql_error (sql, _("Failed to bind columns for '%s' command"), querystr);
+		return NULL;
+	}
 
 	return sql;
 }
@@ -142,6 +146,34 @@ static void mdb_sql_free_tables(GPtrArray *tables)
 		g_free(t);
 	}
 	g_ptr_array_free(tables, TRUE);
+}
+
+/* This gives us a nice, uniform place to keep up with memory that needs to be freed */
+static void mdb_sql_free(MdbSQL *sql)
+{
+	/* Free MdbTableDef structures	*/
+	if (sql->cur_table) {
+		mdb_index_scan_free(sql->cur_table);
+		mdb_free_tabledef(sql->cur_table);
+		sql->cur_table = NULL;
+	}
+
+	/* Free MdbSQLColumns and MdbSQLTables */
+	mdb_sql_free_columns(sql->columns);
+	mdb_sql_free_tables(sql->tables);
+
+	/* Free sargs */
+	if (sql->sarg_tree) {
+		mdb_sql_free_tree(sql->sarg_tree);
+		sql->sarg_tree = NULL;
+	}
+
+	g_list_free(sql->sarg_stack);
+	sql->sarg_stack = NULL;
+
+	/* Free bindings  */
+	mdb_sql_unbind_all(sql);
+	g_ptr_array_free(sql->bound_values, TRUE);
 }
 
 void
@@ -541,13 +573,7 @@ void mdb_sql_dump(MdbSQL *sql)
 }
 void mdb_sql_exit(MdbSQL *sql)
 {
-	/* Free the memory associated with the SQL engine */
-	mdb_sql_reset(sql);
-	
-	g_ptr_array_free(sql->columns, TRUE);
-	g_ptr_array_free(sql->tables, TRUE);
-	
-	/* If libmdb has been initialized, terminate it */
+	mdb_sql_free(sql);
 	if (sql->mdb)
 		mdb_close(sql->mdb);
 	
@@ -556,41 +582,18 @@ void mdb_sql_exit(MdbSQL *sql)
 }
 void mdb_sql_reset(MdbSQL *sql)
 {
-	unsigned int i;
-
-	if (sql->cur_table) {
-		mdb_index_scan_free(sql->cur_table);
-		if (sql->cur_table->sarg_tree) {
-			mdb_sql_free_tree(sql->cur_table->sarg_tree);
-			sql->cur_table->sarg_tree = NULL;
-		}
-		mdb_free_tabledef(sql->cur_table);
-		sql->cur_table = NULL;
-	}
-
-	/* Reset bound values */
-	for (i=0;i<sql->num_columns;i++) {
-		g_free(sql->bound_values[i]);
-		sql->bound_values[i] = NULL;
-	}
+	mdb_sql_free(sql);
 
 	/* Reset columns */
-	mdb_sql_free_columns(sql->columns);
 	sql->num_columns = 0;
 	sql->columns = g_ptr_array_new();
 
-	/* Reset tables */
-	mdb_sql_free_tables(sql->tables);
+	/* Reset MdbSQL tables */
 	sql->num_tables = 0;
 	sql->tables = g_ptr_array_new();
 
-	/* Reset sargs */
-	if (sql->sarg_tree) {
-		mdb_sql_free_tree(sql->sarg_tree);
-		sql->sarg_tree = NULL;
-	}
-	g_list_free(sql->sarg_stack);
-	sql->sarg_stack = NULL;
+	/* Reset bindings */
+	sql->bound_values = g_ptr_array_new();
 
 	sql->all_columns = 0;
 	sql->sel_count = 0;
@@ -760,8 +763,9 @@ int mdb_sql_find_sargcol(MdbSargNode *node, gpointer data)
 		 * Plain integers are UNIX timestamps for backwards compatibility of parser
 		*/
 		if (col->col_type == MDB_DATETIME && node->val_type == MDB_INT) {
-			struct tm *tm = gmtime((time_t*)&node->value.i);
-			mdb_tm_to_date(tm, &node->value.d);
+			struct tm tm;
+			gmtime_r((time_t*)&node->value.i, &tm);
+			mdb_tm_to_date(&tm, &node->value.d);
 			node->val_type = MDB_DOUBLE;
 		}
 	}
@@ -871,25 +875,45 @@ int found = 0;
 	}
 }
 
-void 
+int
 mdb_sql_bind_column(MdbSQL *sql, int colnum, void *varaddr, int *len_ptr)
 {
 	MdbSQLColumn *sqlcol;
 
+	if (colnum <= 0 || colnum > sql->num_columns)
+		return -1;
+
 	/* sql columns are traditionally 1 based, so decrement colnum */
 	sqlcol = g_ptr_array_index(sql->columns,colnum - 1);
-	mdb_bind_column_by_name(sql->cur_table, sqlcol->name, varaddr, len_ptr);
+	return mdb_bind_column_by_name(sql->cur_table, sqlcol->name, varaddr, len_ptr);
 }
-void 
+
+int
 mdb_sql_bind_all(MdbSQL *sql)
 {
 	unsigned int i;
+	void *bound_value;
 
 	for (i=0;i<sql->num_columns;i++) {
-		sql->bound_values[i] = g_malloc0(MDB_BIND_SIZE);
-		mdb_sql_bind_column(sql, i+1, sql->bound_values[i], NULL);
+		bound_value = g_malloc0(sql->mdb->bind_size);
+		g_ptr_array_add(sql->bound_values, bound_value);
+		if (mdb_sql_bind_column(sql, i+1, bound_value, NULL) == -1) {
+			mdb_sql_unbind_all(sql);
+			return -1;
+		}
+	}
+	return sql->num_columns;
+}
+
+void mdb_sql_unbind_all(MdbSQL *sql)
+{
+	unsigned int i;
+
+	for (i=0;i<sql->bound_values->len;i++) {
+		g_free(g_ptr_array_index(sql->bound_values, i));
 	}
 }
+
 /*
  * mdb_sql_fetch_row is now just a wrapper around mdb_fetch_row.
  *   It is left here only for backward compatibility.
@@ -934,7 +958,7 @@ mdb_sql_dump_results(MdbSQL *sql)
 	while(mdb_fetch_row(sql->cur_table)) {
   		for (j=0;j<sql->num_columns;j++) {
 			sqlcol = g_ptr_array_index(sql->columns,j);
-			print_value(sql->bound_values[j],sqlcol->disp_size,!j);
+			print_value(g_ptr_array_index(sql->bound_values, j),sqlcol->disp_size,!j);
 		}
 		fprintf(stdout,"\n");
 	}
@@ -946,10 +970,6 @@ mdb_sql_dump_results(MdbSQL *sql)
 	}
 
 	fprintf(stdout,"\n");
-	/* clean up */
-	for (j=0;j<sql->num_columns;j++) {
-		g_free(sql->bound_values[j]);
-	}
 
 	/* the column and table names are no good now */
 	mdb_sql_reset(sql);

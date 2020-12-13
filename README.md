@@ -2,33 +2,8 @@
 [![Build status](https://ci.appveyor.com/api/projects/status/22wwy5d0rrmk6e3c/branch/master?svg=true)](https://ci.appveyor.com/project/mdbtools/mdbtools/branch/master)
 
 Welcome to the exciting world of MDB Tools! MDB Tools is a set of programs to
-help you extract data from Microsoft Access files in various settings.
-
-After several years of neglect, MDB Tools is under new management as of 2020.
-Update your bookmarks and tell your favorite search engine that this is the new
-address:
-
-    https://github.com/mdbtools/mdbtools
-
-A brief history: the last *official* release (version 0.7.1) occurred in 2016.
-[cyberemissary](https://github.com/cyberemissary) (whose work this fork is
-based on) made a release in December 2018 and called it 0.8.2. In September
-2020, @brianb moved his repository to the current address, and gave
-administrative access to @evanmiller, who acts as the present maintainer.
-
-An official 0.9 release is planned for late 2020. Areas of improvement since
-the 0.7/0.8 days:
-
-- [x] Security / stability / fuzz testing
-- [x] Thread safety
-- [x] In-memory database API
-- [x] GLib is now optional
-- [x] Improved ODBC compliance
-- [x] Continuous integration with Travis and AppVeyor
-- [x] New `mdb-queries` tool
-
-The rest of this README explains what you can find in the project, how to
-install it, and how to contribute.
+help you extract data from Microsoft Access files in various settings. See the
+[NEWS](./NEWS) file for information about the latest release.
 
 # Components
 
@@ -54,8 +29,6 @@ Provides command line utilities, including:
 | `mdb-json` | Export table to JSON format. |
 | `mdb-tables` | A simple dump of table names to be used with shell scripts. |
 | `mdb-count` | A simple count of number of rows in a table, to be used in shell scripts and ETL pipelines. |
-| `mdb-header` | Generates a C header to be used in exporting mdb data to a C prog. |
-| `mdb-parsecsv` | Generates a C program given a CSV file made with mdb-export. |
 | `mdb-sql` | A simple SQL engine (also used by ODBC and gmdb). |
 | `mdb-queries` | List and print queries stored in the database. |
 | `prcat` | Prints the catalog table from an mdb file. |
@@ -64,6 +37,11 @@ Provides command line utilities, including:
 | `prdata` | Dump of the data given a table name. |
 | `prole` | Dump of ole columns given a table name and sargs. |
 | `mdb-hexdump` | (in src/extras) Simple hex dump utility that I've been using to look at mdb files. |
+| `mdb-array` | Export data in an MDB database table to a C array.\* |
+| `mdb-header` | Generates a C header to be used in exporting mdb data to a C prog.\* |
+| `mdb-parsecsv` | Generates a C program given a CSV file made with mdb-export.\* |
+
+\* Deprecated
 
 ## odbc
 
@@ -99,9 +77,6 @@ If you want to build the ODBC driver, you'll need `unixodbc-dev` (version
 If you want to build man pages, you'll need
 [GNU awk](https://www.gnu.org/software/gawk/).
 
-If you want to generate the html version of the docbook, you'll need
-[openjade](http://openjade.sourceforge.net) and basic dsl catalogs.
-
 
 # Installation
 
@@ -110,7 +85,7 @@ Latest version is available at https://github.com/mdbtools/mdbtools
 ## Debian
 
 ```
-apt-get install mdbtools
+apt install mdbtools
 ```
 
 ## Homebrew
@@ -125,13 +100,9 @@ brew install mdbtools
 $ autoreconf -i -f
 ```
 
-If you want to build the html version of the docbook documentation, you need to
-set the environment variable `DOCBOOK_DSL` to the modular dsl translation file.
-For example, before configure, you need something like:
+Then:
 
 ```bash
-$ export DOCBOOK_DSL=/usr/share/sgml/docbook/stylesheet/dsssl/modular/html/docbook.dsl
-
 $ ./configure
 ```
 

@@ -450,10 +450,6 @@ typedef struct {
 	MdbAny	value;
 } MdbSarg;
 
-/* mem.c */
-extern MDB_DEPRECATED(void, mdb_init(void));
-extern MDB_DEPRECATED(void, mdb_exit(void));
-
 /* version.c */
 const char *mdb_get_version(void);
 
@@ -509,7 +505,7 @@ void mdb_data_dump(MdbTableDef *table);
 void mdb_date_to_tm(double td, struct tm *t);
 void mdb_tm_to_date(struct tm *t, double *td);
 char *mdb_uuid_to_string(const void *buf, int start);
-void mdb_bind_column(MdbTableDef *table, int col_num, void *bind_ptr, int *len_ptr);
+int mdb_bind_column(MdbTableDef *table, int col_num, void *bind_ptr, int *len_ptr);
 int mdb_rewind_table(MdbTableDef *table);
 int mdb_fetch_row(MdbTableDef *table);
 int mdb_is_fixed_col(MdbColumn *col);
@@ -533,8 +529,6 @@ int mdb_read_row(MdbTableDef *table, unsigned int row);
 void mdb_buffer_dump(const void *buf, off_t start, size_t len);
 
 /* backend.c */
-MDB_DEPRECATED(char*, mdb_get_coltype_string(MdbBackend *backend, int col_type));
-MDB_DEPRECATED(int, mdb_coltype_takes_length(MdbBackend *backend, int col_type));
 void mdb_init_backends(MdbHandle *mdb);
 void mdb_remove_backends(MdbHandle *mdb);
 const MdbBackendType* mdb_get_colbacktype(const MdbColumn *col);
